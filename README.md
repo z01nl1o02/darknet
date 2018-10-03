@@ -3,7 +3,7 @@
 
 # FGSM #
 Fast Gradient Sign Attatck(FGSM) 出自 [Explaining and Harnessing Adversarial Examples](https://arxiv.org/abs/1412.6572).沿梯度正方向修改输入数据，达到迷惑模型的目的。   
-
+![fgsm](https://github.com/z01nl1o02/darknet/blob/dev/fgsm.jpg)
 ## 流程说明
    * 计算网络error相对于输入数据的梯度   
      forward($data_{old}$)   
