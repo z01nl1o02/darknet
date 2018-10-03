@@ -1339,7 +1339,7 @@ data resize_data(data orig, int w, int h)
 
 data load_data_augment(char **paths, int n, int m, char **labels, int k, tree *hierarchy, int min, int max, int size, float angle, float aspect, float hue, float saturation, float exposure, int center)
 {
-    if(m) paths = get_random_paths(paths, n, m);
+    if(m) paths =get_random_paths(paths, n, m); //resample m images to get subset with n images
     data d = {0};
     d.shallow = 0;
     d.w=size;

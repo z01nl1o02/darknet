@@ -38,13 +38,13 @@ layer make_deconvolutional_layer(int batch, int h, int w, int c, int n, int size
     layer l = {0};
     l.type = DECONVOLUTIONAL;
 
-    l.h = h;
+    l.h = h; 
     l.w = w;
-    l.c = c;
-    l.n = n;
+    l.c = c; //input channels
+    l.n = n; //output channels
     l.batch = batch;
-    l.stride = stride;
-    l.size = size;
+    l.stride = stride; //stride
+    l.size = size; //filter size (size, size)
 
     l.nweights = c*n*size*size;
     l.nbiases = n;

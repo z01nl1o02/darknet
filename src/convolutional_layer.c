@@ -455,9 +455,9 @@ void forward_convolutional_layer(convolutional_layer l, network net)
         net.input = l.binary_input;
     }
 
-    int m = l.n/l.groups;
-    int k = l.size*l.size*l.c/l.groups;
-    int n = l.out_w*l.out_h;
+    int m = l.n/l.groups;  //output channel
+    int k = l.size*l.size*l.c/l.groups; //filter size  (c,h,w)
+    int n = l.out_w*l.out_h; //output feature map size
     for(i = 0; i < l.batch; ++i){
         for(j = 0; j < l.groups; ++j){
             float *a = l.weights + j*l.nweights/l.groups;
@@ -470,6 +470,14 @@ void forward_convolutional_layer(convolutional_layer l, network net)
             } else {
                 im2col_cpu(im, l.c/l.groups, l.h, l.w, l.size, l.stride, l.pad, b);
             }
+            //imagine spread filters on input feature map according to filter size and stride setting
+            //
+            //a: filter (m,k), each row is one of output channels
+            //b: vectorized input feature map (k,n), each row is piexel values corresponding to one position of filter
+            //   each column corresponding to one image patch (same size to filter) 
+            //c: output feature map (m,n), each row is one of output channel
+            //
+            // channels is alwaye higher dim. (w,h) is lower dim and always expand to one vector as row in matrix
             gemm(0,0,m,n,k,1,a,k,b,n,1,c,n);
         }
     }
@@ -487,10 +495,13 @@ void forward_convolutional_layer(convolutional_layer l, network net)
 void backward_convolutional_layer(convolutional_layer l, network net)
 {
     int i, j;
-    int m = l.n/l.groups;
-    int n = l.size*l.size*l.c/l.groups;
-    int k = l.out_w*l.out_h;
+    int m = l.n/l.groups; //filter number
+    int n = l.size*l.size*l.c/l.groups; //filter size x input channels
+    int k = l.out_w*l.out_h; //output fmap size of one channel
 
+   // printf("net idx%d, m%d n%d k%d\n",net.index,m,n,k);
+
+    //transfer delta from next layer on activation output to delta on activation input
     gradient_array(l.output, l.outputs*l.batch, l.activation, l.delta);
 
     if(l.batch_normalize){
@@ -505,7 +516,8 @@ void backward_convolutional_layer(convolutional_layer l, network net)
             float *b = net.workspace;
             float *c = l.weight_updates + j*l.nweights/l.groups;
 
-            float *im  = net.input + (i*l.groups + j)*l.c/l.groups*l.h*l.w;
+            //input of current layer (also output of previous layer)
+            float *im  = net.input + (i*l.groups + j)*l.c/l.groups*l.h*l.w; 
             float *imd = net.delta + (i*l.groups + j)*l.c/l.groups*l.h*l.w;
 
             if(l.size == 1){
@@ -530,6 +542,17 @@ void backward_convolutional_layer(convolutional_layer l, network net)
                 if (l.size != 1) {
                     col2im_cpu(net.workspace, l.c/l.groups, l.h, l.w, l.size, l.stride, l.pad, imd);
                 }
+#if 0
+                {
+                    float min = 99999.0, max = -99999.0f;
+                    for(int k = 0; k < l.w * l.h * l.c; k++)
+                    {
+                        if(imd[k] > max) max  =  imd[k];
+                        else if (imd[k] < min) min = imd[k];
+                    }
+                    printf("fgsm min%f max%f\n",min,max);
+                }
+#endif
             }
         }
     }
