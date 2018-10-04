@@ -283,6 +283,17 @@ void backward_network(network *netp)
         }
         net.index = i;
         l.backward(l, net);
+#if 0
+        if(i == 2)
+        {
+            layer prev = net.layers[i-1];
+            for(int k = 0; k < prev.out_w * prev.out_h * prev.out_c; k++)
+            {
+                if(prev.delta[k] > 0.00001 || prev.delta[k] < -0.00001)
+                    printf("%f\t",prev.delta[k]);
+            }
+        }
+#endif
     }
 }
 
@@ -290,12 +301,13 @@ float train_network_datum(network *net)
 {
     *net->seen += net->batch;
     net->train = 1;
-    forward_network(net);
-    backward_network(net);
+    forward_network(net); //forward
+    backward_network(net); //backward (weights_update/bias_update)
     float error = *net->cost;
-    if(((*net->seen)/net->batch)%net->subdivisions == 0) update_network(net);
+    if(((*net->seen)/net->batch)%net->subdivisions == 0) update_network(net); //change parameters
     return error;
 }
+
 
 float train_network_sgd(network *net, data d, int n)
 {
@@ -493,6 +505,106 @@ void top_predictions(network *net, int k, int *index)
     top_k(net->output, net->outputs, k, index);
 }
 
+
+//////////////////////////////////////////////////////////////////////////////////
+//Fast Gradient Sign Attack(FGSM)
+float* backward_network_FGSM(network *netp)
+{
+#ifdef GPU
+    if(netp->gpu_index >= 0){
+        return backward_network_FGSM_gpu(netp);   
+    }
+#endif
+    network net = *netp;
+    int i;
+    network orig = net;
+
+    float* input_delta = (float*)malloc(net.w * net.h * net.c * sizeof(float));
+    memset(input_delta,0, net.w * net.h * net.c * sizeof(float));
+
+    for(i = net.n-1; i >= 0; --i){
+        layer l = net.layers[i];
+        if(l.stopbackward) break;
+        if(i == 0){
+            net = orig;
+            net.delta = input_delta; 
+        }else{
+            layer prev = net.layers[i-1];
+            net.input = prev.output;
+            net.delta = prev.delta;
+        }
+        net.index = i;
+        l.backward(l, net);
+
+#if 0
+        if(i == 2)
+        {
+            layer prev = net.layers[i-1];
+            for(int k = 0; k < prev.out_w * prev.out_h * prev.out_c; k++)
+            {
+                if(prev.delta[k] > 0.00001 || prev.delta[k] < -0.00001)
+                    printf("%f\t",prev.delta[k]);
+            }
+        }
+#endif
+        if(i == 0)
+        {
+            net.delta = NULL;
+        }
+    }
+    return input_delta;
+}
+
+float* network_predict_FGSM(network* net, network*netConst, float* input, int truth, float step)
+{
+    network orig = *net;
+    net->input = input;
+    net->truth = &truth;  //set label
+    net->train = 0;
+    net->delta = 0;
+    net->train = 1; 
+    net->batch = 1;
+    //1--get delta of input 
+    forward_network(net); //forward
+    float* delta = backward_network_FGSM(net); //backward (weights_update/bias_update)
+    *net = orig;
+
+    //2--modify input according to FGSM
+    float* input_fake =(float*)malloc(net->w * net->h * net->c * sizeof(float));
+    float min = 99999.0f, max = -9999.0f;
+    for(int k = 0; k < net->w * net->h * net->c; k++)
+    {
+        int sign = 0;
+        if (delta[k] > 0.00001) sign = 1;
+        else if(delta[k] < -0.00001) sign = -1;
+
+        if (delta[k] > max) max = delta[k];
+        else if(delta[k] < min) min = delta[k];
+
+        //printf("%.3f\t",delta[k]);
+        float val = input[k] + sign * step;
+        if (val < 0) val = 0.0f;
+        else if(val > 1) val = 1.0f;
+        input_fake[k] = val;
+    }
+//    printf("delta min%.3f max%.3f\n",min,max);
+
+    //3--predict faked input
+    orig = *netConst;
+    netConst->input = input_fake;
+    netConst->truth = 0;
+    netConst->train = 0;
+    netConst->delta = 0;
+    netConst->train = 0;
+    netConst->batch = 1;
+    forward_network(netConst);
+    float *out = netConst->output;
+    *netConst = orig;
+    if(delta != NULL)
+        free(delta);
+    free(input_fake);
+    return out;
+}
 
 float *network_predict(network *net, float *input)
 {
@@ -785,6 +897,38 @@ void forward_network_gpu(network *netp)
     }
     pull_network_output(netp);
     calc_network_cost(netp);
+}
+
+float* backward_network_FGSM_gpu(network *netp)
+{
+    int i;
+    network net = *netp;
+    network orig = net;
+    cuda_set_device(net.gpu_index);
+    float* delta_gpu = (float*)cuda_make_array(NULL,net.w * net.h * net.c);
+    float* delta = (float*)malloc(sizeof(float)*(net.w * net.h * net.c));
+    for(i = net.n-1; i >= 0; --i){
+        layer l = net.layers[i];
+        if(l.stopbackward) break;
+        if(i == 0){
+            net = orig;
+            net.delta = delta;
+            net.delta_gpu = delta_gpu;
+        }else{
+            layer prev = net.layers[i-1];
+            net.input = prev.output;
+            net.delta = prev.delta;
+            net.input_gpu = prev.output_gpu;
+            net.delta_gpu = prev.delta_gpu;
+        }
+        net.index = i;
+        l.backward_gpu(l, net);
+    }
+    cuda_pull_array(delta_gpu,delta,net.w * net.h * net.c);
+    cuda_free(delta_gpu);
+    net.delta = NULL;
+    net.delta_gpu = NULL;
+    return delta;
 }
 
 void backward_network_gpu(network *netp)

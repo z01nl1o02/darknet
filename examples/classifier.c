@@ -21,17 +21,19 @@ void train_classifier(char *datacfg, char *cfgfile, char *weightfile, int *gpus,
 
     float avg_loss = -1;
     char *base = basecfg(cfgfile);
-    printf("%s\n", base);
-    printf("%d\n", ngpus);
-    network **nets = calloc(ngpus, sizeof(network*));
+    printf("%s\n", base); //name of cfg file
+    printf("%d\n", ngpus); 
+    network **nets = calloc(ngpus, sizeof(network*)); //one net copy for each gpu
 
     srand(time(0));
     int seed = rand();
     for(i = 0; i < ngpus; ++i){
         srand(seed);
 #ifdef GPU
-        cuda_set_device(gpus[i]);
+        if (gpus[i] >= 0)
+            cuda_set_device(gpus[i]);
 #endif
+        printf("init cuda\r\n");
         nets[i] = load_network(cfgfile, weightfile, clear);
         nets[i]->learning_rate *= ngpus;
     }
@@ -98,7 +100,7 @@ void train_classifier(char *datacfg, char *cfgfile, char *weightfile, int *gpus,
     int epoch = (*net->seen)/N;
     while(get_current_batch(net) < net->max_batches || net->max_batches == 0){
         if(net->random && count++%40 == 0){
-            printf("Resizing\n");
+            printf("Resizing\n"); //dynamic change input size during trainning???
             int dim = (rand() % 11 + 4) * 32;
             //if (get_current_batch(net)+200 > net->max_batches) dim = 608;
             //int dim = (rand() % 4 + 16) * 32;
@@ -141,7 +143,12 @@ void train_classifier(char *datacfg, char *cfgfile, char *weightfile, int *gpus,
 #endif
         if(avg_loss == -1) avg_loss = loss;
         avg_loss = avg_loss*.9 + loss*.1;
-        printf("%ld, %.3f: %f, %f avg, %f rate, %lf seconds, %ld images\n", get_current_batch(net), (float)(*net->seen)/N, loss, avg_loss, get_current_rate(net), what_time_is_it_now()-time, *net->seen);
+        printf("%ld, %.3f: %f, %f avg, %f rate, %lf seconds, %ld images\n", 
+            get_current_batch(net), (float)(*net->seen)/N, 
+            loss, avg_loss, 
+            get_current_rate(net), 
+            what_time_is_it_now()-time, 
+            *net->seen);
         free_data(train);
         if(*net->seen/N > epoch){
             epoch = *net->seen/N;
@@ -358,6 +365,67 @@ void validate_classifier_full(char *datacfg, char *filename, char *weightfile)
 }
 
 
+void validate_classifier_single_fgsm(char *datacfg, char *filename, char *weightfile, float eps)
+{
+    int i, j;
+    network *net = load_network(filename, weightfile, 1);
+    network *netCache = load_network(filename, weightfile, 1);
+    srand(time(0));
+
+    list *options = read_data_cfg(datacfg);
+
+    char *label_list = option_find_str(options, "labels", "data/labels.list");
+    char *leaf_list = option_find_str(options, "leaves", 0);
+    if(leaf_list) change_leaves(net->hierarchy, leaf_list);
+    char *valid_list = option_find_str(options, "valid", "data/train.list");
+    int classes = option_find_int(options, "classes", 2);
+    int topk = option_find_int(options, "top", 1);
+
+    char **labels = get_labels(label_list);
+    list *plist = get_paths(valid_list);
+
+    char **paths = (char **)list_to_array(plist);
+    int m = plist->size;
+    free_list(plist);
+
+    float avg_acc = 0;
+    float avg_topk = 0;
+    int *indexes = calloc(topk, sizeof(int));
+
+    for(i = 0; i < m; ++i){
+        int class = -1;
+        char *path = paths[i];
+        for(j = 0; j < classes; ++j){
+            if(strstr(path, labels[j])){
+                class = j;
+                break;
+            }
+        }
+        image im = load_image_color(paths[i], 0, 0);
+        image crop = center_crop_image(im, net->w, net->h);
+        //grayscale_image_3c(crop);
+        //show_image(im, "orig");
+        //show_image(crop, "cropped");
+        //cvWaitKey(0);
+        float *pred = network_predict_FGSM(netCache,net, crop.data,class,eps);
+        //float *pred = network_predict(net, crop.data);
+        free_image(im);
+        free_image(crop);
+        top_k(pred, classes, topk, indexes);
+
+        if(indexes[0] == class) avg_acc += 1;
+        for(j = 0; j < topk; ++j){
+            if(indexes[j] == class) avg_topk += 1;
+
+        }
+        load_weights(netCache,weightfile);
+        printf("%s, %d, %f, %f, \n", paths[i], class, pred[0], pred[1]);
+        printf("%d: top 1: %f, top %d: %f\n", i, avg_acc/(i+1), topk, avg_topk/(i+1));
+    }
+    free_network(net);
+    free_network(netCache);
+}
+
 void validate_classifier_single(char *datacfg, char *filename, char *weightfile)
 {
     int i, j;
@@ -415,6 +483,7 @@ void validate_classifier_single(char *datacfg, char *filename, char *weightfile)
         printf("%s, %d, %f, %f, \n", paths[i], class, pred[0], pred[1]);
         printf("%d: top 1: %f, top %d: %f\n", i, avg_acc/(i+1), topk, avg_topk/(i+1));
     }
+
 }
 
 void validate_classifier_multi(char *datacfg, char *cfg, char *weights)
@@ -1057,21 +1126,29 @@ void demo_classifier(char *datacfg, char *cfgfile, char *weightfile, int cam_ind
 }
 
 
-void run_classifier(int argc, char **argv)
+void run_classifier(int argc, char **argv, int nogpu)
 {
     if(argc < 4){
         fprintf(stderr, "usage: %s %s [train/test/valid] [cfg] [weights (optional)]\n", argv[0], argv[1]);
         return;
     }
 
+    // -gpus 0,1,2,3
     char *gpu_list = find_char_arg(argc, argv, "-gpus", 0);
     int ngpus;
-    int *gpus = read_intlist(gpu_list, &ngpus, gpu_index);
+    // if gpu_list is NULL using only gpu 0 (default value of gpu_index is 0)
+    int *gpus = read_intlist(gpu_list, &ngpus, gpu_index); 
 
+    if(nogpu != 0)
+    {
+        ngpus = 1;
+        *gpus = -1;
+    }
 
     int cam_index = find_int_arg(argc, argv, "-c", 0);
     int top = find_int_arg(argc, argv, "-t", 0);
     int clear = find_arg(argc, argv, "-clear");
+    float eps = find_float_arg(argc, argv, "-eps",0.007); //eps for fgsm
     char *data = argv[3];
     char *cfg = argv[4];
     char *weights = (argc > 5) ? argv[5] : 0;
@@ -1089,6 +1166,7 @@ void run_classifier(int argc, char **argv)
     else if(0==strcmp(argv[2], "csv")) csv_classifier(data, cfg, weights);
     else if(0==strcmp(argv[2], "label")) label_classifier(data, cfg, weights);
     else if(0==strcmp(argv[2], "valid")) validate_classifier_single(data, cfg, weights);
+    else if(0==strcmp(argv[2], "fgsm")) validate_classifier_single_fgsm(data, cfg, weights,eps);
     else if(0==strcmp(argv[2], "validmulti")) validate_classifier_multi(data, cfg, weights);
     else if(0==strcmp(argv[2], "valid10")) validate_classifier_10(data, cfg, weights);
     else if(0==strcmp(argv[2], "validcrop")) validate_classifier_crop(data, cfg, weights);

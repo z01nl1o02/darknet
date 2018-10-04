@@ -190,9 +190,9 @@ convolutional_layer parse_convolutional(list *options, size_params params)
     ACTIVATION activation = get_activation(activation_s);
 
     int batch,h,w,c;
-    h = params.h;
-    w = params.w;
-    c = params.c;
+    h = params.h; //input height
+    w = params.w; //input width
+    c = params.c; //input channels
     batch=params.batch;
     if(!(h && w && c)) error("Layer before convolutional layer must output image.");
     int batch_normalize = option_find_int_quiet(options, "batch_normalize", 0);
@@ -654,6 +654,7 @@ learning_rate_policy get_policy(char *s)
 
 void parse_net_options(list *options, network *net)
 {
+
     net->batch = option_find_int(options, "batch",1);
     net->learning_rate = option_find_float(options, "learning_rate", .001);
     net->momentum = option_find_float(options, "momentum", .9);
@@ -661,7 +662,7 @@ void parse_net_options(list *options, network *net)
     int subdivs = option_find_int(options, "subdivisions",1);
     net->time_steps = option_find_int_quiet(options, "time_steps",1);
     net->notruth = option_find_int_quiet(options, "notruth",0);
-    net->batch /= subdivs;
+    net->batch /= subdivs; //batch???
     net->batch *= net->time_steps;
     net->subdivisions = subdivs;
     net->random = option_find_int_quiet(options, "random", 0);
@@ -753,9 +754,9 @@ network *parse_network_cfg(char *filename)
     if(!is_network(s)) error("First section must be [net] or [network]");
     parse_net_options(options, net);
 
-    params.h = net->h;
-    params.w = net->w;
-    params.c = net->c;
+    params.h = net->h; //net input height
+    params.w = net->w; //net input width
+    params.c = net->c; //net input channels
     params.inputs = net->inputs;
     params.batch = net->batch;
     params.time_steps = net->time_steps;
@@ -902,8 +903,8 @@ list *read_cfg(char *filename)
         switch(line[0]){
             case '[':
                 current = malloc(sizeof(section));
-                list_insert(options, current);
-                current->options = make_list();
+                list_insert(options, current); //insert last layer
+                current->options = make_list(); //start a new layer
                 current->type = line;
                 break;
             case '\0':
@@ -912,7 +913,7 @@ list *read_cfg(char *filename)
                 free(line);
                 break;
             default:
-                if(!read_option(line, current->options)){
+                if(!read_option(line, current->options)){ //store (key,value) pairs (key=value)
                     fprintf(stderr, "Config file error line %d, could parse: %s\n", nu, line);
                     free(line);
                 }

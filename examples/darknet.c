@@ -10,7 +10,7 @@ extern void run_yolo(int argc, char **argv);
 extern void run_detector(int argc, char **argv);
 extern void run_coco(int argc, char **argv);
 extern void run_nightmare(int argc, char **argv);
-extern void run_classifier(int argc, char **argv);
+extern void run_classifier(int argc, char **argv, int nogpu);
 extern void run_regressor(int argc, char **argv);
 extern void run_segmenter(int argc, char **argv);
 extern void run_isegmenter(int argc, char **argv);
@@ -446,7 +446,7 @@ int main(int argc, char **argv)
     } else if (0 == strcmp(argv[1], "classify")){
         predict_classifier("cfg/imagenet1k.data", argv[2], argv[3], argv[4], 5);
     } else if (0 == strcmp(argv[1], "classifier")){
-        run_classifier(argc, argv);
+        run_classifier(argc, argv,gpu_index>=0? 0:1);
     } else if (0 == strcmp(argv[1], "regressor")){
         run_regressor(argc, argv);
     } else if (0 == strcmp(argv[1], "isegmenter")){
