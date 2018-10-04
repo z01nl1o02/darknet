@@ -12,7 +12,12 @@ Fast Gradient Sign Attatck(FGSM) 出自 [Explaining and Harnessing Adversarial E
      $data_{new} = data_{old} + eps \times sign(grad)$
    * 计算修改后数据的预测结果   
      forward($data_{new}$)   
-  随着eps的增加，模型在新数据上预测准确率逐渐降低
+
+## 结果   
+  随着eps的增加，模型在新数据上预测准确率逐渐降低   
+  ![curve](https://github.com/z01nl1o02/darknet/blob/dev/fgsm_curve.jpg)
+
+
       
 ## 使用方式
  ./darknet classifier fgsm cfg/mnist.data  cfg/mnist.cfg backup/mnist_5.weights -eps 0.1
