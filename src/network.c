@@ -148,6 +148,8 @@ char *get_layer_string(LAYER_TYPE a)
             return "avgpool";
         case SOFTMAX:
             return "softmax";
+        case CENTERLOSS:
+            return "centerloss";
         case DETECTION:
             return "detection";
         case REGION:
@@ -269,6 +271,7 @@ void backward_network(network *netp)
     }
 #endif
     network net = *netp;
+
     int i;
     network orig = net;
     for(i = net.n-1; i >= 0; --i){
@@ -283,6 +286,8 @@ void backward_network(network *netp)
         }
         net.index = i;
         l.backward(l, net);
+
+
 #if 0
         if(i == 2)
         {
@@ -834,6 +839,8 @@ void free_network(network *net)
     free(net->layers);
     if(net->input) free(net->input);
     if(net->truth) free(net->truth);
+
+
 #ifdef GPU
     if(net->input_gpu) cuda_free(net->input_gpu);
     if(net->truth_gpu) cuda_free(net->truth_gpu);
