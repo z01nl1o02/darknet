@@ -87,6 +87,7 @@ typedef enum {
     UPSAMPLE,
     LOGXENT,
     L2NORM,
+    CENTERLOSS,
     BLANK
 } LAYER_TYPE;
 
@@ -179,6 +180,7 @@ struct layer{
     int total;
 
     float alpha;
+    float lambda;
     float beta;
     float kappa;
 
@@ -223,6 +225,13 @@ struct layer{
     float * state_delta;
     float * combine_cpu;
     float * combine_delta_cpu;
+
+    //center loss layer
+    float * cl_centers;
+    float * cl_centers_delta;
+    struct layer* cl_fc_layer;
+    struct layer* cl_softmax_layer;
+    float cl_center_lr; //center update momentumn
 
     float * concat;
     float * concat_delta;
