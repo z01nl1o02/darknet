@@ -33,10 +33,10 @@ centerloss_layer make_centerloss_layer(int batch, int inputs, int outputs, int g
     l.inputs = inputs;
     l.outputs = outputs;
     l.cl_centers = calloc(inputs * outputs, sizeof(float));
-    l.cl_centers_delta = calloc(outputs * inputs, sizeof(float));
+    l.cl_centers_delta = calloc(outputs * inputs + outputs, sizeof(float)); //last outputs fields for class_num
 
     fill_cpu(l.inputs * l.outputs, 0, l.cl_centers, 1);
-    fill_cpu(l.inputs * l.outputs, 0, l.cl_centers_delta, 1);
+    fill_cpu(l.inputs * l.outputs + l.outputs, 0, l.cl_centers_delta, 1);
 
     l.delta = calloc(inputs*batch, sizeof(float));
     l.loss = calloc(inputs*batch, sizeof(float));
@@ -62,12 +62,14 @@ centerloss_layer make_centerloss_layer(int batch, int inputs, int outputs, int g
 
 void centerloss_get_loss(float* input, int batch, int inputs, int outputs, float* truth,float* centers, float* center_delta, float* delta, float* loss)
 {
+    int idx;
     int batchidx;
     //not memset center_delta here. it is the respondence of caller
+    float* class_num = center_delta + inputs * outputs;
     for(batchidx = 0; batchidx < batch; batchidx++ )
     {
         float* current_input = input + batchidx * inputs;
-        float* current_truth = truth + batchidx * inputs;
+        float* current_truth = truth + batchidx * outputs; //one-hot
         float* current_delta = delta + batchidx * inputs;
         float* current_loss = loss + batchidx * inputs;
         int cid = 0;
@@ -84,9 +86,24 @@ void centerloss_get_loss(float* input, int batch, int inputs, int outputs, float
             float tmp = current_input[inputidx] - current_center[inputidx];
             current_loss[inputidx] = tmp * tmp;
             current_delta[inputidx] =  tmp;
-            current_center_delta[inputidx] = -tmp;
+            current_center_delta[inputidx] += (-tmp);
+        }
+       // printf("a class num %d %lf %d\r\n",cid, class_num[cid], inputs * outputs);
+        class_num[cid] += 1;
+    }
+
+    for(idx = 0; idx < outputs; idx++)
+    {
+        if(class_num[idx] < 1) continue;
+        int inputidx;
+        float* current_center_delta = center_delta + idx * inputs;
+       // printf("idx=%d %lf\r\n",idx, class_num[idx]);
+        for(inputidx = 0; inputidx < inputs; inputidx++)
+        {
+            current_center_delta[inputidx] /= (1 + class_num[idx]);
         }
     }
+    
     return;
 }
 
@@ -95,19 +112,22 @@ void forward_centerloss_layer(const centerloss_layer l, network net)
     l.cl_fc_layer->forward(*(l.cl_fc_layer), net);
     if(net.train && net.truth)
     {//calculate center_delta
+        fill_cpu(l.inputs * l.outputs + l.outputs, 0, l.cl_centers_delta, 1);
         centerloss_get_loss(net.input,l.batch, l.inputs, l.outputs, net.truth, l.cl_centers, l.cl_centers_delta, l.delta,l.loss);
     }
     l.cl_softmax_layer->forward(*(l.cl_softmax_layer),net);
     if(net.train && net.truth)
     {
-        l.cost[0] = l.cl_softmax_layer->loss[0] +  0.5 * l.lambda * sum_array(l.loss, l.batch*l.inputs);
+        l.cost[0] = l.cl_softmax_layer->cost[0] +  0.5 * l.lambda * sum_array(l.loss, l.batch*l.inputs);
     }
 }
 
 void backward_centerloss_layer(const centerloss_layer l, network net)
 {
+    
+    axpy_cpu(l.inputs * l.batch, l.lambda, l.delta, 1, l.cl_softmax_layer->delta, 1); 
     l.cl_softmax_layer->backward(*(l.cl_softmax_layer),net);
-    axpy_cpu(l.inputs * l.batch, l.lambda, l.delta, 1, net.delta, 1); 
+   // axpy_cpu(l.inputs * l.batch, l.lambda, l.delta, 1, net.delta, 1); 
     l.cl_fc_layer->backward(*(l.cl_fc_layer), net);
 }
 
