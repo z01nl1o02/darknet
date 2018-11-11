@@ -52,6 +52,19 @@ void free_layer(layer l)
     if(l.r_cpu)              free(l.r_cpu);
     if(l.h_cpu)              free(l.h_cpu);
     if(l.binary_input)       free(l.binary_input);
+    
+    if(l.cl_centers) free(l.cl_centers);
+    if(l.cl_centers_delta) free(l.cl_centers_delta);
+    if(l.cl_fc_layer)
+    {
+        free_layer(*(l.cl_fc_layer));
+        free(l.cl_fc_layer);
+    }
+    if(l.cl_softmax_layer)
+    {
+        free_layer(*(l.cl_softmax_layer));
+        free(l.cl_softmax_layer);
+    }
 
 #ifdef GPU
     if(l.indexes_gpu)           cuda_free((float *)l.indexes_gpu);

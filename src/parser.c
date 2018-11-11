@@ -22,6 +22,7 @@
 #include "list.h"
 #include "local_layer.h"
 #include "maxpool_layer.h"
+#include "centerloss_layer.h"
 #include "normalization_layer.h"
 #include "option_list.h"
 #include "parser.h"
@@ -83,6 +84,7 @@ LAYER_TYPE string_to_layer_type(char * type)
             || strcmp(type, "[softmax]")==0) return SOFTMAX;
     if (strcmp(type, "[route]")==0) return ROUTE;
     if (strcmp(type, "[upsample]")==0) return UPSAMPLE;
+    if (strcmp(type, "[centerloss]") == 0) return CENTERLOSS;
     return BLANK;
 }
 
@@ -280,6 +282,24 @@ layer parse_softmax(list *options, size_params params)
     l.spatial = option_find_float_quiet(options, "spatial", 0);
     l.noloss =  option_find_int_quiet(options, "noloss", 0);
     return l;
+}
+
+layer parse_centerloss(list* options, size_params params)
+{
+    int groups = option_find_int_quiet(options, "groups",1);
+    int output = option_find_int(options, "output",1);
+    layer l = make_centerloss_layer(params.batch, params.inputs, output, groups);
+    l.w = params.w;
+    l.h = params.h;
+    l.c = params.c;
+
+    l.cl_softmax_layer->w = params.w;
+    l.cl_softmax_layer->h = params.h;
+    l.cl_softmax_layer->c = params.c;
+    l.cl_softmax_layer->temperature = 1;
+
+    return l;
+
 }
 
 int *parse_yolo_mask(char *a, int *num)
@@ -835,6 +855,8 @@ network *parse_network_cfg(char *filename)
             l.output_gpu = net->layers[count-1].output_gpu;
             l.delta_gpu = net->layers[count-1].delta_gpu;
 #endif
+        }else if(lt == CENTERLOSS){
+            l = parse_centerloss(options, params);
         }else{
             fprintf(stderr, "Type not recognized: %s\n", s->type);
         }
