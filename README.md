@@ -24,4 +24,16 @@ Fast Gradient Sign Attatck(FGSM) 出自 [Explaining and Harnessing Adversarial E
 
 
 
+# yolov3训练
+  [修改example代码](https://blog.csdn.net/z0n1l2/article/details/83933765)
+  train.sh/test.sh
+## 基于voc数据集格式+预训练模型
+   ./darknet detector train examples/traffic/image.data examples/traffic/yolov3.cfg pretrained/darknet53.conv.74 2>&1 | tee examples/traffic/train.log
+
+## 统计模型recalling
+  ./darknet detector recall2 examples/traffic/image.data examples/traffic/yolov3.cfg examples/traffic/yolov3_900.weights examples/traffic/test.txt  2>&1 | tee examples/traffic/yolov3_900.test.log
+          
+## 批量运行，保存结果
+  ./darknet detector test2 examples/traffic/image.data examples/traffic/yolov3.cfg examples/traffic/yolov3_800.weights examples/traffic/test.txt -out predict/
+
 
