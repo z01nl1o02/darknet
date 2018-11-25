@@ -201,8 +201,9 @@ if __name__=="__main__":
     elif args.mode == "run":
         TEST().run_batch_image(input_folder,args.weights)
     elif args.mode == 'recall':
-        TEST().calc_recalling(input_folder,args.weight)
-        
+        TEST().calc_recalling(input_folder,args.weights)
+    else:
+        print 'unk mode'
 
 
 
