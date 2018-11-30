@@ -23,7 +23,7 @@ class TRAINER:
         self.test_file = 'test.txt'
         self.backup_folder = 'backup/'
 
-        self.model_file = 'yolov3.cfg'
+        self.model_file = 'yolov3-voc.cfg'
 
 
         self.weight_file = "darknet53.conv.74" #pretrained model (if not exists, training without pretrained)
@@ -103,7 +103,7 @@ class TEST:
         self.valid_file = 'valid.txt'
         self.test_file = 'test.txt'
         self.backup_folder = 'backup/'
-        self.model_file = 'yolov3.cfg'
+        self.model_file = 'yolov3-voc.cfg'
         
 
         
