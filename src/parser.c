@@ -325,8 +325,19 @@ int *parse_yolo_mask(char *a, int *num)
 
 layer parse_yolo(list *options, size_params params)
 {
-    int classes = option_find_int(options, "classes", 20);
-    int total = option_find_int(options, "num", 1);
+    /*
+    [yolo]
+    mask = 6,7,8
+    anchors = 10,13,  16,30,  33,23,  30,61,  62,45,  59,119,  116,90,  156,198,  373,326
+    classes=20
+    num=9
+    jitter=.3
+    ignore_thresh = .5
+    truth_thresh = 1
+    random=1
+    */
+    int classes = option_find_int(options, "classes", 20); //类别数目
+    int total = option_find_int(options, "num", 1); //anchor数目
     int num = total;
 
     char *a = option_find_str(options, "mask", 0);
@@ -334,7 +345,7 @@ layer parse_yolo(list *options, size_params params)
     layer l = make_yolo_layer(params.batch, params.w, params.h, num, total, mask, classes);
     assert(l.outputs == params.inputs);
 
-    l.max_boxes = option_find_int_quiet(options, "max",90);
+    l.max_boxes = option_find_int_quiet(options, "max",90); //一个图像中目标个数最大值不超过90
     l.jitter = option_find_float(options, "jitter", .2);
 
     l.ignore_thresh = option_find_float(options, "ignore_thresh", .5);
@@ -354,7 +365,7 @@ layer parse_yolo(list *options, size_params params)
         }
         for(i = 0; i < n; ++i){
             float bias = atof(a);
-            l.biases[i] = bias;
+            l.biases[i] = bias; //(w0,h0) (w1,h1)   (wn, hn)
             a = strchr(a, ',')+1;
         }
     }
@@ -777,7 +788,7 @@ network *parse_network_cfg(char *filename)
     params.h = net->h; //net input height
     params.w = net->w; //net input width
     params.c = net->c; //net input channels
-    params.inputs = net->inputs;
+    params.inputs = net->inputs; //net->w * net->h * net->c by default
     params.batch = net->batch;
     params.time_steps = net->time_steps;
     params.net = net;

@@ -10,18 +10,29 @@
 #include <string.h>
 #include <stdlib.h>
 
+/*
+convolution layout
+x:  w*h
+y:  w*h
+w:  w*h
+h:  w*h
+
+*/
+
+
 layer make_yolo_layer(int batch, int w, int h, int n, int total, int *mask, int classes)
 {
     int i;
     layer l = {0};
     l.type = YOLO;
 
-    l.n = n;
-    l.total = total;
+    l.n = n; //anchor number 
+    l.total = total; //anchor number 
+    //assert(n == total)
     l.batch = batch;
     l.h = h;
     l.w = w;
-    l.c = n*(classes + 4 + 1);
+    l.c = n*(classes + 4 + 1);  
     l.out_w = l.w;
     l.out_h = l.h;
     l.out_c = l.c;
@@ -38,11 +49,11 @@ layer make_yolo_layer(int batch, int w, int h, int n, int total, int *mask, int 
     l.bias_updates = calloc(n*2, sizeof(float));
     l.outputs = h*w*n*(classes + 4 + 1);
     l.inputs = l.outputs;
-    l.truths = 90*(4 + 1);
+    l.truths = 90*(4 + 1); // 一幅图像中目标数目最多不超过90
     l.delta = calloc(batch*l.outputs, sizeof(float));
     l.output = calloc(batch*l.outputs, sizeof(float));
     for(i = 0; i < total*2; ++i){
-        l.biases[i] = .5;
+        l.biases[i] = .5;  // 参考get_yolo_box, 这个值和bbox的w/h有关系，可以影响长宽比
     }
 
     l.forward = forward_yolo_layer;
@@ -95,12 +106,13 @@ float delta_yolo_box(box truth, float *x, float *biases, int n, int index, int i
     box pred = get_yolo_box(x, biases, n, index, i, j, lw, lh, w, h, stride);
     float iou = box_iou(pred, truth);
 
-    float tx = (truth.x*lw - i);
+    float tx = (truth.x*lw - i);  //输入特征图尺寸
     float ty = (truth.y*lh - j);
-    float tw = log(truth.w*w / biases[2*n]);
+    float tw = log(truth.w*w / biases[2*n]); //网络输入图尺寸
     float th = log(truth.h*h / biases[2*n + 1]);
 
-    delta[index + 0*stride] = scale * (tx - x[index + 0*stride]);
+    //scale = 2 - groundtruth.w * groundtruth.h 
+    delta[index + 0*stride] = scale * (tx - x[index + 0*stride]); 
     delta[index + 1*stride] = scale * (ty - x[index + 1*stride]);
     delta[index + 2*stride] = scale * (tw - x[index + 2*stride]);
     delta[index + 3*stride] = scale * (th - x[index + 3*stride]);
@@ -131,16 +143,23 @@ static int entry_index(layer l, int batch, int location, int entry)
 
 void forward_yolo_layer(const layer l, network net)
 {
+    /*
+    net.truth: 目标位置和类别(x,y,w,h,class-id) * batch_size
+    */
     int i,j,b,t,n;
     memcpy(l.output, net.input, l.outputs*l.batch*sizeof(float));
+
+    /*
+    n*(4+1+classes)*w*h=> n*(x,y,w,h,objectness+classes)*w*h
+    */
 
 #ifndef GPU
     for (b = 0; b < l.batch; ++b){
         for(n = 0; n < l.n; ++n){
             int index = entry_index(l, b, n*l.w*l.h, 0);
-            activate_array(l.output + index, 2*l.w*l.h, LOGISTIC);
+            activate_array(l.output + index, 2*l.w*l.h, LOGISTIC); //sigmoid(x), sigmoid(y)
             index = entry_index(l, b, n*l.w*l.h, 4);
-            activate_array(l.output + index, (1+l.classes)*l.w*l.h, LOGISTIC);
+            activate_array(l.output + index, (1+l.classes)*l.w*l.h, LOGISTIC); //sigmoid(objectness), sigmoid(classes)
         }
     }
 #endif
@@ -161,7 +180,7 @@ void forward_yolo_layer(const layer l, network net)
             for (i = 0; i < l.w; ++i) {
                 for (n = 0; n < l.n; ++n) {
                     int box_index = entry_index(l, b, n*l.w*l.h + j*l.w + i, 0);
-                    box pred = get_yolo_box(l.output, l.biases, l.mask[n], box_index, i, j, l.w, l.h, net.w, net.h, l.w*l.h);
+                    box pred = get_yolo_box(l.output, l.biases, l.mask[n], box_index, i, j, l.w, l.h, net.w, net.h, l.w*l.h); //what is the difference between l.w and net.w
                     float best_iou = 0;
                     int best_t = 0;
                     for(t = 0; t < l.max_boxes; ++t){
@@ -175,11 +194,11 @@ void forward_yolo_layer(const layer l, network net)
                     }
                     int obj_index = entry_index(l, b, n*l.w*l.h + j*l.w + i, 4);
                     avg_anyobj += l.output[obj_index];
-                    l.delta[obj_index] = 0 - l.output[obj_index];
+                    l.delta[obj_index] = 0 - l.output[obj_index];  //先按照属于副样本处理，计算delta
                     if (best_iou > l.ignore_thresh) {
-                        l.delta[obj_index] = 0;
+                        l.delta[obj_index] = 0; //iou大于0.5，但又不是足够大，该anchor不做正样本也不做副样本，不参与误差计算
                     }
-                    if (best_iou > l.truth_thresh) {
+                    if (best_iou > l.truth_thresh) { //iou足够大，属于正样本
                         l.delta[obj_index] = 1 - l.output[obj_index];
 
                         int class = net.truth[best_t*(4 + 1) + b*l.truths + 4];
